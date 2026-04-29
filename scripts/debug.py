@@ -2,8 +2,15 @@ import sys
 import time
 from pathlib import Path
 
+# Al ejecutar `python scripts/debug.py`, sys.path incluye `scripts/`, no la raíz del repo.
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
 import fitz
 import polars as pl
+
+from services.pdf_platform import chunk_words_subpartidas_hasta_anexos
 
 pl.Config.set_tbl_rows(-1)  # todas las filas
 pl.Config.set_tbl_cols(-1)  # todas las columnas
@@ -56,111 +63,7 @@ def words_dataframe(pdf_name: str, pages: list[int] | None = None) -> pl.DataFra
     )
 
 
-def text_dataframe(pdf_name: str, pages: list[int] | None = None) -> pl.DataFrame:
-    pdf_path = _resolve_pdf_path(pdf_name)
-    rows: list[dict[str, int | str]] = []
-
-    with fitz.open(pdf_path) as doc:
-        for page_idx in _available_pages(doc, pages):
-            page = doc[page_idx]
-            rows.append(
-                {
-                    "page_number": page_idx + 1,
-                    "text": str(page.get_text("text")),
-                }
-            )
-
-    return pl.DataFrame(rows)
-
-
-def text_series(pdf_name: str, pages: list[int] | None = None) -> pl.Series:
-    return text_dataframe(pdf_name, pages)["text"]
-
-
-def get_value_by_gemetri(
-    df: pl.DataFrame, target_line: str, x0_tolerance: int = 0, x1_tolerance: int = 0
-) -> pl.DataFrame:
-
-    if not isinstance(df, pl.DataFrame):
-        raise TypeError("df must be a polars DataFrame")
-
-    if not isinstance(target_line, str):
-        raise ValueError("target_line must be a non-empty string")
-
-    if not isinstance(x0_tolerance, int):
-        raise TypeError("x0_tolerance must be an int")
-
-    if not isinstance(x1_tolerance, int):
-        raise TypeError("x1_tolerance must be an int")
-
-    keys = ["page_number", "block_no", "line_no"]
-
-    line_matches = (
-        df.sort(keys + ["word_no"])
-        .group_by(keys)
-        .agg(pl.col("text").str.join(" ").alias("line_text"))
-        .filter(pl.col("line_text").str.starts_with(target_line))
-        .select(keys)
-    )
-
-    target_line_list = target_line.split()
-
-    label_df = (
-        df.join(line_matches, on=keys, how="inner")
-        .filter(pl.col("text").is_in(target_line_list))
-        .sort(keys + ["word_no"])
-        .with_columns(pl.lit("label").alias("kind"))
-    )
-
-    label_bounds = label_df.group_by(keys).agg(
-        pl.col("x0").min().alias("label_x0_min"),
-        pl.col("x1").max().alias("label_x1_max"),
-        pl.col("y1").max().alias("label_y1_max"),
-    )
-
-    candidate_words = df.select(
-        [
-            pl.col("page_number"),
-            pl.col("x0").alias("cand_x0"),
-            pl.col("y0").alias("cand_y0"),
-            pl.col("x1").alias("cand_x1"),
-            pl.col("y1").alias("cand_y1"),
-            pl.col("text").alias("cand_text"),
-            pl.col("block_no").alias("cand_block_no"),
-            pl.col("line_no").alias("cand_line_no"),
-            pl.col("word_no").alias("cand_word_no"),
-        ]
-    )
-
-    value_candidates = (
-        candidate_words.join(label_bounds, on=["page_number"], how="inner")
-        .filter(
-            (pl.col("cand_x0") > (pl.col("label_x0_min") - x0_tolerance))
-            & (pl.col("cand_x0") < (pl.col("label_x1_max") + x1_tolerance))
-            & (pl.col("cand_y0") > pl.col("label_y1_max"))
-        )
-        .sort(["page_number", "block_no", "line_no", "cand_y0", "cand_x0", "cand_word_no"])
-        .group_by(keys)
-        .agg(
-            pl.col("cand_x0").first().alias("x0"),
-            pl.col("cand_y0").first().alias("y0"),
-            pl.col("cand_x1").first().alias("x1"),
-            pl.col("cand_y1").first().alias("y1"),
-            pl.col("cand_text").first().alias("text"),
-            pl.col("cand_word_no").first().alias("word_no"),
-        )
-        .with_columns(pl.lit("value").alias("kind"))
-        .select(label_df.columns)
-    )
-
-    result_df = pl.concat([label_df, value_candidates], how="vertical").sort(
-        keys + ["kind", "word_no"]
-    )
-    return (
-        result_df.filter(pl.col("kind") == "value")
-        .select(pl.col("page_number").alias("page"), pl.col("text"))
-        .sort("page")
-    )
+_READ_ORDER = ["page_number", "y0", "x0", "block_no", "line_no", "word_no"]
 
 
 if __name__ == "__main__":
@@ -171,45 +74,23 @@ if __name__ == "__main__":
     words_df = words_dataframe(file_name)
     t1_words = time.perf_counter()
 
-    t0_subpartida = time.perf_counter()
-
-    subpartida_df = get_value_by_gemetri(words_df, "59. Subpartida arancelaria")
-    cantidad_df = get_value_by_gemetri(words_df, "77. Cantidad dcms.", x1_tolerance=20)
-    peso_neto_df = get_value_by_gemetri(words_df, "72. Peso neto kgs.", x1_tolerance=20)
-    peso_bruto_df = get_value_by_gemetri(words_df, "71. Peso bruto kgs.", x1_tolerance=20)
-    fob_df = get_value_by_gemetri(words_df, "78.Valor FOB USD", x1_tolerance=50)
-
-    t1_subpartida = time.perf_counter()
+    t0_platform_chunk = time.perf_counter()
+    platform_words_df = chunk_words_subpartidas_hasta_anexos(words_df)
+    t1_platform_chunk = time.perf_counter()
 
     t1_total = time.perf_counter()
     print("============ timings (s): =============")
     print(f"words_dataframe: {t1_words - t0_words:.4f}")
-    print(f"get_subpartida: {t1_subpartida - t0_subpartida:.4f}")
+    print(f"chunk_words_subpartidas_hasta_anexos: {t1_platform_chunk - t0_platform_chunk:.4f}")
     print(f"total: {t1_total - t0_total:.4f}")
 
-    print("============ All_df: =============")
-    # Hacer un join de los tres dataframes
-    subpartida_df = subpartida_df.rename({"text": "subpartida"})
-    cantidad_df = cantidad_df.rename({"text": "cantidad"})
-    peso_neto_df = peso_neto_df.rename({"text": "peso_neto"})
-    peso_bruto_df = peso_bruto_df.rename({"text": "peso_bruto_df"})
-    fob_df = fob_df.rename({"text": "fob"})
-
-    all_df = (
-        subpartida_df.join(cantidad_df, on="page", how="full")
-        .with_columns(pl.coalesce(["page", "page_right"]).alias("page"))
-        .drop("page_right")
-        .join(peso_neto_df, on="page", how="full")
-        .with_columns(pl.coalesce(["page", "page_right"]).alias("page"))
-        .drop("page_right")
-        .join(peso_bruto_df, on="page", how="full")
-        .with_columns(pl.coalesce(["page", "page_right"]).alias("page"))
-        .drop("page_right")
-        .join(fob_df, on="page", how="full")
-        .with_columns(pl.coalesce(["page", "page_right"]).alias("page"))
-        .drop("page_right")
-        .sort("page")
-    )
-    print(all_df)
-
-    # filtered_df.write_csv("filtered_df.csv")
+    print("============ pdf_platform chunk (Subpartidas → Anexos): =============")
+    print(f"words_df rows: {words_df.height} | platform_words_df rows: {platform_words_df.height}")
+    if platform_words_df.is_empty():
+        print("(vacío: no hubo 'Subpartidas' o no hay tramo antes de 'Anexos')")
+    else:
+        chunk_sorted = platform_words_df.sort(_READ_ORDER)
+        print("--- primeras 30 filas del chunk (orden lectura) ---")
+        print(chunk_sorted.head(30))
+        print("--- últimas 15 filas del chunk ---")
+        print(chunk_sorted.tail(15))

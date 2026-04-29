@@ -7,6 +7,7 @@ from app.components.results_table import results_table as results_table_componen
 from app.components.summary_counters import (
     summary_counters as summary_counters_component,
 )
+from services import dian_vs_platform
 
 
 def render_page() -> None:
@@ -31,12 +32,16 @@ def render_page() -> None:
             message = "Carga ambos documentos PDF para ejecutar la comparación."
             message_kind = "warning"
         else:
-            message = (
-                "La comparación visual está lista; "
-                "el flujo de extracción queda pendiente de conexión."
-            )
-            counters = {"total": 0, "matches": 0, "differences": 0}
-            rows = []
+            try:
+                result = dian_vs_platform.run(dian_pdf.getvalue(), client_pdf.getvalue())
+            except Exception as exc:
+                message = f"No fue posible ejecutar la comparación: {exc}"
+                message_kind = "error"
+            else:
+                message = result.get("message")
+                message_kind = result.get("message_kind", "info")
+                counters = result.get("counters")
+                rows = result.get("rows")
 
     message_box_component(message, message_kind)
     summary_counters_component(counters)
