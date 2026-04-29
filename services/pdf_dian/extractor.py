@@ -1,0 +1,118 @@
+import polars as pl
+
+
+def get_value_by_geometric(
+    df: pl.DataFrame, target_line: str, x0_tolerance: int = 0, x1_tolerance: int = 0
+) -> pl.DataFrame:
+
+    if not isinstance(df, pl.DataFrame):
+        raise TypeError("df must be a polars DataFrame")
+
+    if not isinstance(target_line, str):
+        raise ValueError("target_line must be a non-empty string")
+
+    if not isinstance(x0_tolerance, int):
+        raise TypeError("x0_tolerance must be an int")
+
+    if not isinstance(x1_tolerance, int):
+        raise TypeError("x1_tolerance must be an int")
+
+    keys = ["page_number", "block_no", "line_no"]
+
+    line_matches = (
+        df.sort(keys + ["word_no"])
+        .group_by(keys)
+        .agg(pl.col("text").str.join(" ").alias("line_text"))
+        .filter(pl.col("line_text") == target_line)
+        .select(keys)
+    )
+
+    target_line_list = target_line.split()
+
+    label_df = (
+        df.join(line_matches, on=keys, how="inner")
+        .filter(pl.col("text").is_in(target_line_list))
+        .sort(keys + ["word_no"])
+        .with_columns(pl.lit("label").alias("kind"))
+    )
+
+    label_bounds = label_df.group_by(keys).agg(
+        pl.col("x0").min().alias("label_x0_min"),
+        pl.col("x1").max().alias("label_x1_max"),
+        pl.col("y1").max().alias("label_y1_max"),
+    )
+
+    candidate_words = df.select(
+        [
+            pl.col("page_number"),
+            pl.col("x0").alias("cand_x0"),
+            pl.col("y0").alias("cand_y0"),
+            pl.col("x1").alias("cand_x1"),
+            pl.col("y1").alias("cand_y1"),
+            pl.col("text").alias("cand_text"),
+            pl.col("block_no").alias("cand_block_no"),
+            pl.col("line_no").alias("cand_line_no"),
+            pl.col("word_no").alias("cand_word_no"),
+        ]
+    )
+
+    value_candidates = (
+        candidate_words.join(label_bounds, on=["page_number"], how="inner")
+        .filter(
+            (pl.col("cand_x0") > (pl.col("label_x0_min") - x0_tolerance))
+            & (pl.col("cand_x0") < (pl.col("label_x1_max") + x1_tolerance))
+            & (pl.col("cand_y0") > pl.col("label_y1_max"))
+        )
+        .sort(["page_number", "block_no", "line_no", "cand_y0", "cand_x0", "cand_word_no"])
+        .group_by(keys)
+        .agg(
+            pl.col("cand_x0").first().alias("x0"),
+            pl.col("cand_y0").first().alias("y0"),
+            pl.col("cand_x1").first().alias("x1"),
+            pl.col("cand_y1").first().alias("y1"),
+            pl.col("cand_text").first().alias("text"),
+            pl.col("cand_word_no").first().alias("word_no"),
+        )
+        .with_columns(pl.lit("value").alias("kind"))
+        .select(label_df.columns)
+    )
+
+    result_df = pl.concat([label_df, value_candidates], how="vertical").sort(
+        keys + ["kind", "word_no"]
+    )
+    return (
+        result_df.filter(pl.col("kind") == "value")
+        .select(pl.col("page_number").alias("page"), pl.col("text"))
+        .sort("page")
+    )
+
+
+def run(words_df: pl.DataFrame) -> pl.DataFrame:
+
+    subpartida_df = get_value_by_geometric(words_df, "59. Subpartida arancelaria")
+    cantidad_df = get_value_by_geometric(words_df, "77. Cantidad dcms.", x1_tolerance=20)
+    peso_neto_df = get_value_by_geometric(words_df, "72. Peso neto kgs.", x1_tolerance=20)
+    peso_bruto_df = get_value_by_geometric(words_df, "71. Peso bruto kgs.", x1_tolerance=20)
+    fob_df = get_value_by_geometric(words_df, "78.Valor FOB USD", x1_tolerance=50)
+
+    subpartida_df = subpartida_df.rename({"text": "subpartida"})
+    cantidad_df = cantidad_df.rename({"text": "cantidad"})
+    peso_neto_df = peso_neto_df.rename({"text": "peso_neto"})
+    peso_bruto_df = peso_bruto_df.rename({"text": "peso_bruto_df"})
+    fob_df = fob_df.rename({"text": "fob"})
+
+    return (
+        subpartida_df.join(cantidad_df, on="page", how="full")
+        .with_columns(pl.coalesce(["page", "page_right"]).alias("page"))
+        .drop("page_right")
+        .join(peso_neto_df, on="page", how="full")
+        .with_columns(pl.coalesce(["page", "page_right"]).alias("page"))
+        .drop("page_right")
+        .join(peso_bruto_df, on="page", how="full")
+        .with_columns(pl.coalesce(["page", "page_right"]).alias("page"))
+        .drop("page_right")
+        .join(fob_df, on="page", how="full")
+        .with_columns(pl.coalesce(["page", "page_right"]).alias("page"))
+        .drop("page_right")
+        .sort("page")
+    )
