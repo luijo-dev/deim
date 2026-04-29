@@ -3,7 +3,8 @@ import polars as pl
 from services.pdf_dian import extractor as dian_extractor
 from services.pdf_handler import words_dataframe_from_bytes
 
-RESULT_COLUMNS = ["Estado", "subpartida", "DIAN", "Platform"]
+DIAN_COLUMNS = ["cantidad", "peso_neto", "peso_bruto", "fob"]
+RESULT_COLUMNS = ["Estado", "subpartida", *DIAN_COLUMNS, "Platform"]
 COUNTER_KEYS = ["total", "Sin match", "Todo bien", "Con diferencias"]
 
 
@@ -69,7 +70,7 @@ def _compare_rows(dian_rows: list[dict], platform_df: pl.DataFrame) -> list[dict
             {
                 "Estado": estado,
                 "subpartida": subpartida,
-                "DIAN": dian_row,
+                **{column: dian_row.get(column) for column in DIAN_COLUMNS},
                 "Platform": platform_row,
             }
         )

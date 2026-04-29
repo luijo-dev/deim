@@ -23,7 +23,7 @@ def get_value_by_geometric(
         df.sort(keys + ["word_no"])
         .group_by(keys)
         .agg(pl.col("text").str.join(" ").alias("line_text"))
-        .filter(pl.col("line_text") == target_line)
+        .filter(pl.col("line_text").str.starts_with(target_line))
         .select(keys)
     )
 
@@ -98,7 +98,7 @@ def run(words_df: pl.DataFrame) -> pl.DataFrame:
     subpartida_df = subpartida_df.rename({"text": "subpartida"})
     cantidad_df = cantidad_df.rename({"text": "cantidad"})
     peso_neto_df = peso_neto_df.rename({"text": "peso_neto"})
-    peso_bruto_df = peso_bruto_df.rename({"text": "peso_bruto_df"})
+    peso_bruto_df = peso_bruto_df.rename({"text": "peso_bruto"})
     fob_df = fob_df.rename({"text": "fob"})
 
     return (

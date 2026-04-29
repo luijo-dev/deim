@@ -12,7 +12,10 @@ from services import dian_vs_platform
 
 def render_page() -> None:
     st.title("Comparador DEIM - MVP")
-    st.caption("Carga dos documentos PDF para revisar la comparación básica.")
+    st.caption(
+        "Carga el PDF DIAN para revisar la comparación básica. "
+        "Platform es opcional temporalmente."
+    )
 
     left, right = st.columns(2)
     with left:
@@ -28,18 +31,24 @@ def render_page() -> None:
     rows: list[dict] | None = None
 
     if primary_button_component("Ejecutar comparación", key="run_comparison"):
-        if not dian_pdf or not client_pdf:
-            message = "Carga ambos documentos PDF para ejecutar la comparación."
+        if not dian_pdf:
+            message = "Carga el documento DIAN (PDF) para ejecutar la comparación."
             message_kind = "warning"
         else:
             try:
-                result = dian_vs_platform.run(dian_pdf.getvalue(), client_pdf.getvalue())
+                platform_pdf_bytes = client_pdf.getvalue() if client_pdf else None
+                result = dian_vs_platform.run(dian_pdf.getvalue(), platform_pdf_bytes)
             except Exception as exc:
                 message = f"No fue posible ejecutar la comparación: {exc}"
                 message_kind = "error"
             else:
                 message = result.get("message")
                 message_kind = result.get("message_kind", "info")
+                if not client_pdf:
+                    message = (
+                        f"{message} Platform no se cargó; comparación contra "
+                        "Platform vacío temporal."
+                    )
                 counters = result.get("counters")
                 rows = result.get("rows")
 

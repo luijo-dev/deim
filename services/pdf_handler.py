@@ -11,7 +11,7 @@ pl.Config.set_tbl_width_chars(10_000)  # ancho grande para evitar "…"
 
 RES_DIR = Path("/home/luijo/personal/jose-reyes/dian-declaracion-importacion/res")
 WORDS_SCHEMA = {
-    "page_number": pl.Int64,
+    "page": pl.Int64,
     "x0": pl.Int64,
     "y0": pl.Int64,
     "x1": pl.Int64,
@@ -21,6 +21,7 @@ WORDS_SCHEMA = {
     "line_no": pl.Int64,
     "word_no": pl.Int64,
 }
+FOOTER_Y0_THRESHOLD = 630
 
 
 def _resolve_pdf_path(pdf_name: str) -> Path:
@@ -45,7 +46,7 @@ def _words_dataframe_from_document(
                 continue
             rows.append(
                 {
-                    "page_number": page_idx + 1,
+                        "page": page_idx + 1,
                     "x0": float(word[0]),
                     "y0": float(word[1]),
                     "x1": float(word[2]),
@@ -60,11 +61,15 @@ def _words_dataframe_from_document(
     if not rows:
         return pl.DataFrame(schema=WORDS_SCHEMA)
 
-    return pl.DataFrame(rows).with_columns(
-        pl.col("x0").floor().cast(pl.Int64),
-        pl.col("y0").floor().cast(pl.Int64),
-        pl.col("x1").floor().cast(pl.Int64),
-        pl.col("y1").floor().cast(pl.Int64),
+    return (
+        pl.DataFrame(rows)
+        .with_columns(
+            pl.col("x0").floor().cast(pl.Int64),
+            pl.col("y0").floor().cast(pl.Int64),
+            pl.col("x1").floor().cast(pl.Int64),
+            pl.col("y1").floor().cast(pl.Int64),
+        )
+        .filter(pl.col("y0") <= FOOTER_Y0_THRESHOLD)
     )
 
 

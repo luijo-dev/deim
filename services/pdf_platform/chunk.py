@@ -9,7 +9,7 @@ _ANEXOS = "Anexos"
 def chunk_words_subpartidas_hasta_anexos(df: pl.DataFrame) -> pl.DataFrame:
     """Recorta ``words_df`` al tramo útil entre la primera ``Subpartidas`` y ``Anexos``.
 
-    Orden de lectura: ``page_number``, luego ``y0`` (más confiable que ``block_no``),
+    Orden de lectura: ``page``, luego ``y0`` (más confiable que ``block_no``),
     y desempate con ``x0``, ``block_no``, ``line_no``, ``word_no``.
 
     - Se eliminan todas las palabras **antes** de la primera aparición de ``Subpartidas``.
@@ -20,7 +20,7 @@ def chunk_words_subpartidas_hasta_anexos(df: pl.DataFrame) -> pl.DataFrame:
     ``Subpartidas`` hasta el final del documento ordenado.
     """
     required = {
-        "page_number",
+        "page",
         "y0",
         "x0",
         "text",
@@ -33,7 +33,7 @@ def chunk_words_subpartidas_hasta_anexos(df: pl.DataFrame) -> pl.DataFrame:
         msg = f"df falta columnas requeridas: {sorted(missing)}"
         raise ValueError(msg)
 
-    sort_cols = ["page_number", "y0", "x0", "block_no", "line_no", "word_no"]
+    sort_cols = ["page", "y0", "x0", "block_no", "line_no", "word_no"]
     ordered = df.sort(sort_cols)
     with_idx = ordered.with_row_index("_idx")
 
