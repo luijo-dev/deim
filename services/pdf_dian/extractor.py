@@ -17,7 +17,7 @@ def get_value_by_geometric(
     if not isinstance(x1_tolerance, int):
         raise TypeError("x1_tolerance must be an int")
 
-    keys = ["page_number", "block_no", "line_no"]
+    keys = ["page", "block_no", "line_no"]
 
     line_matches = (
         df.sort(keys + ["word_no"])
@@ -44,7 +44,7 @@ def get_value_by_geometric(
 
     candidate_words = df.select(
         [
-            pl.col("page_number"),
+            pl.col("page"),
             pl.col("x0").alias("cand_x0"),
             pl.col("y0").alias("cand_y0"),
             pl.col("x1").alias("cand_x1"),
@@ -57,13 +57,13 @@ def get_value_by_geometric(
     )
 
     value_candidates = (
-        candidate_words.join(label_bounds, on=["page_number"], how="inner")
+        candidate_words.join(label_bounds, on=["page"], how="inner")
         .filter(
             (pl.col("cand_x0") > (pl.col("label_x0_min") - x0_tolerance))
             & (pl.col("cand_x0") < (pl.col("label_x1_max") + x1_tolerance))
             & (pl.col("cand_y0") > pl.col("label_y1_max"))
         )
-        .sort(["page_number", "block_no", "line_no", "cand_y0", "cand_x0", "cand_word_no"])
+        .sort(["page", "block_no", "line_no", "cand_y0", "cand_x0", "cand_word_no"])
         .group_by(keys)
         .agg(
             pl.col("cand_x0").first().alias("x0"),
@@ -82,7 +82,7 @@ def get_value_by_geometric(
     )
     return (
         result_df.filter(pl.col("kind") == "value")
-        .select(pl.col("page_number").alias("page"), pl.col("text"))
+        .select(pl.col("page"), pl.col("text"))
         .sort("page")
     )
 
