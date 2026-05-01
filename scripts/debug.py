@@ -18,7 +18,7 @@ pl.Config.set_fmt_str_lengths(10_000)  # no recortar strings
 pl.Config.set_tbl_width_chars(100)  # ancho grande para evitar "…"
 
 
-RES_DIR = Path("/home/luijo/personal/jose-reyes/dian-declaracion-importacion/res")
+RES_DIR = Path("/home/luijo/personal/jose-reyes/dian-declaracion-importacion/deim/res")
 FOOTER_Y0_THRESHOLD = 630
 
 
@@ -141,7 +141,7 @@ def find_header_rows(df: pl.DataFrame, header_text: str) -> list[dict[str, objec
         .agg(
             pl.col("text").str.join(" ").alias("text"),
         )
-        .filter(pl.col("text").str.strip_chars().str.starts_with(header_text))
+        .filter(pl.col("text").str.strip_chars().str.contains(header_text))
         .unique(subset=["page", "row_id"], maintain_order=True)
         .head(1)
     )
@@ -188,30 +188,60 @@ if __name__ == "__main__":
         print("(vacío: no hubo 'Subpartidas' o no hay tramo antes de 'Anexos')")
     else:
         chunk_sorted = platform_words_df.sort(_READ_ORDER)
-        print("--- primeras 30 filas del chunk (orden lectura) ---")
-        print(chunk_sorted.head(30))
-        print("--- últimas 15 filas del chunk ---")
-        print(chunk_sorted.tail(15))
+        #print("--- primeras 30 filas del chunk (orden lectura) ---")
+        #print(chunk_sorted.head(30))
+        #print("--- últimas 15 filas del chunk ---")
+        #print(chunk_sorted.tail(15))
 
-        print("============ build_rows (página × y0 tolerancia): =============")
+        #print("============ build_rows (página × y0 tolerancia): =============")
         rows_df = build_rows(platform_words_df, y_tolerance=2)
-        print(rows_df.head(30))
-        print("============ summary_by_row (concat por row_id): =============")
+        #print(rows_df.head(30))
+        #print("============ summary_by_row (concat por row_id): =============")
         summary_df = summary_by_row(rows_df)
-        print(summary_df.head(30))
+        #print(summary_df.head(30))
+        
+        ############################################################################
+        
         print("============ header rows: subpartida =============")
+        
+        header_subpartida = ["Subpartida", "Descripción", "Unidad", "Comercial", "Cantidad"]
+        header_subpartida_str = " ".join(header_subpartida)
+        print(header_subpartida_str)
+        
         subpartida_header_rows = find_header_rows(
-            rows_df, "Subpartida Descripción Unidad Comercial Cantidad"
+            rows_df, header_subpartida_str
         )
         print(subpartida_header_rows)
         print("============ header rows: mercancía =============")
-        mercancia_header_rows = find_header_rows(
-            rows_df, "Ref. Embalaje Descripción P. Bruto P. Neto Cantidad"
+        
+        # Defibi la primera parte de la cabecera de la mercancía
+        header_mercancia_1 = ["Ref.", "Embalaje", "Descripción", "P. Bruto", "P. Neto", "Cantidad", "Valor FOB Total"]
+        header_mercancia_str_1 = " ".join(header_mercancia_1)
+        print("header_mercancia_str_1: ", header_mercancia_str_1)
+        
+        # Busca la primera parte de la cabecera de la mercancía
+        mercancia_header_rows_1 = find_header_rows(
+            rows_df, header_mercancia_str_1
         )
+        
+        # Define la segunda parte de la cabecera de la mercancía
+        header_mercancia_2 = ["Valor FOB Total", "Valor FOB Real"]
+        header_mercancia_str_2 = " ".join(header_mercancia_2)
+        print("mercancia_header_rows_2: ", header_mercancia_str_2)
+        
+        # Busca la segunda parte de la cabecera de la mercancía
+        mercancia_header_rows_2 = find_header_rows(
+            rows_df, header_mercancia_str_2
+        )
+        
+        # Combina las dos partes de la cabecera de la mercancía
+        mercancia_header_rows = mercancia_header_rows_1 + mercancia_header_rows_2
+        
         print(mercancia_header_rows)
         print("============ add_subpartida_id (chunk por Subpartidas): =============")
         rows_with_subpartida_id = add_subpartida_id(rows_df)
         print(rows_with_subpartida_id.head(30))
         print("============ add_subpartida_code (código por subpartida): =============")
         rows_with_subpartida_code = add_subpartida_code(rows_with_subpartida_id)
-        print(rows_with_subpartida_code.head(60))
+        print(rows_with_subpartida_code.head(1000))
+        rows_with_subpartida_code.write_csv("./res/rows_with_subpartida_code.csv")
