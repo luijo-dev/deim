@@ -8,3 +8,8 @@ wheels/
 
 # Virtual environments
 .venv
+*.xlsx
+*.csv
+*.pdf
+
+res/
