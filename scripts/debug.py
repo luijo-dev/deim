@@ -257,6 +257,58 @@ def select_numeric_merchandise_columns(df: pl.DataFrame) -> pl.DataFrame:
     )
 
 
+def build_platform_values_contract(df: pl.DataFrame) -> pl.DataFrame:
+    """Contrato base debug para valores de plataforma consumible luego por dian_vs_platform."""
+    required = {"page", "row_id", "column_id", "column_value", "subpartida_code"}
+    missing = required - set(df.columns)
+    if missing:
+        msg = (
+            "df falta columnas requeridas para build_platform_values_contract: "
+            f"{sorted(missing)}"
+        )
+        raise ValueError(msg)
+
+    return (
+        df.select(
+            [
+                "page",
+                "row_id",
+                "column_id",
+                pl.col("column_value").alias("value"),
+                pl.col("subpartida_code").alias("subpartida"),
+            ]
+        )
+        .filter(pl.col("subpartida").is_not_null())
+    )
+
+
+def platform_df_adapter(df: pl.DataFrame) -> pl.DataFrame:
+    """Adapta el contrato largo debug a la forma ancha comparable de plataforma."""
+    required = {"page", "row_id", "column_id", "value", "subpartida"}
+    missing = required - set(df.columns)
+    if missing:
+        msg = f"df falta columnas requeridas para platform_df_adapter: {sorted(missing)}"
+        raise ValueError(msg)
+
+    required_column_ids = ["p_bruto", "p_neto", "cantidad", "valor_fob_total"]
+
+    return (
+        df.filter(pl.col("column_id").is_in(required_column_ids))
+        .group_by(["page", "row_id", "subpartida"], maintain_order=True)
+        .agg(
+            [
+                pl.col("value")
+                .filter(pl.col("column_id") == column_id)
+                .first()
+                .alias(column_id)
+                for column_id in required_column_ids
+            ]
+        )
+        .filter(pl.all_horizontal(pl.col(required_column_ids).is_not_null()))
+        .select(["subpartida", *required_column_ids])
+    )
+
+
 def add_subpartida_id(df: pl.DataFrame) -> pl.DataFrame:
     required = {"page", "x0", "y0", "x1", "y1", "text", "row_id"}
     missing = required - set(df.columns)
@@ -429,7 +481,15 @@ if __name__ == "__main__":
         print(json.dumps(mercancia_header_ranges, indent=4))
 
         print("============ build_columns (asignación por X): =============")
-        columns_df = build_columns(rows_df, mercancia_header_ranges)
+        rows_with_subpartida_id = add_subpartida_id(rows_df)
+        print("============ add_subpartida_id (chunk por Subpartidas): =============")
+        print(rows_with_subpartida_id.head(30))
+
+        print("============ add_subpartida_code (código por subpartida): =============")
+        rows_with_subpartida_code = add_subpartida_code(rows_with_subpartida_id)
+        print(rows_with_subpartida_code.head(1000))
+
+        columns_df = build_columns(rows_with_subpartida_code, mercancia_header_ranges)
         numeric_columns_df = select_numeric_merchandise_columns(columns_df)
         print(
             numeric_columns_df.select(
@@ -442,18 +502,21 @@ if __name__ == "__main__":
                     "column_id",
                     "column_name",
                     "column_value",
+                    "subpartida_code",
                 ]
             )
         )
+
+        platform_values_contract_df = build_platform_values_contract(numeric_columns_df)
+        print("============ platform values contract (base debug): =============")
+        print(platform_values_contract_df)
+
+        platform_df = platform_df_adapter(platform_values_contract_df)
+        print("============ platform df (wide comparable shape): =============")
+        print(platform_df)
         
         rows_df.write_csv("./res/rows_df.csv")
-        numeric_columns_df.write_csv("./res/numeric_columns_df.csv")
-         
-        exit()
-        print("============ add_subpartida_id (chunk por Subpartidas): =============")
-        rows_with_subpartida_id = add_subpartida_id(rows_df)
-        print(rows_with_subpartida_id.head(30))
-        print("============ add_subpartida_code (código por subpartida): =============")
-        rows_with_subpartida_code = add_subpartida_code(rows_with_subpartida_id)
-        print(rows_with_subpartida_code.head(1000))
         rows_with_subpartida_code.write_csv("./res/rows_with_subpartida_code.csv")
+        numeric_columns_df.write_csv("./res/numeric_columns_df.csv")
+        platform_values_contract_df.write_csv("./res/platform_values_contract.csv")
+        platform_df.write_csv("./res/platform_df.csv")
