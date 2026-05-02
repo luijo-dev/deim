@@ -1,0 +1,24 @@
+# Same exclusions as .dockerignore for Cloud Build context
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.ruff_cache/
+.git/
+.gitignore
+res/
+filtered_df.csv
+*.csv
+*.pdf
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+.streamlit/
+dist/
+build/
+*.egg-info/
