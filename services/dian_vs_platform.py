@@ -2,14 +2,23 @@ import polars as pl
 
 from services.pdf_dian import extractor as dian_extractor
 from services.pdf_handler import words_dataframe_from_bytes
+from services.pdf_platform import extractor as platform_extractor
 
-DIAN_COLUMNS = ["cantidad", "peso_neto", "peso_bruto", "fob"]
-RESULT_COLUMNS = ["Estado", "subpartida", *DIAN_COLUMNS, "Platform"]
+COMPARABLE_COLUMNS = ["cantidad", "peso_neto", "peso_bruto", "fob_total"]
+RESULT_COLUMNS = ["Estado", "subpartida", *COMPARABLE_COLUMNS, "Platform"]
 COUNTER_KEYS = ["total", "Sin match", "Todo bien", "Con diferencias"]
 
 
 def _empty_platform_dataframe() -> pl.DataFrame:
-    return pl.DataFrame(schema={"subpartida": pl.String})
+    return pl.DataFrame(
+        schema={
+            "subpartida": pl.String,
+            "cantidad": pl.Float64,
+            "peso_neto": pl.Float64,
+            "peso_bruto": pl.Float64,
+            "fob_total": pl.Float64,
+        }
+    )
 
 
 def _empty_counters() -> dict[str, int]:
@@ -70,7 +79,7 @@ def _compare_rows(dian_rows: list[dict], platform_df: pl.DataFrame) -> list[dict
             {
                 "Estado": estado,
                 "subpartida": subpartida,
-                **{column: dian_row.get(column) for column in DIAN_COLUMNS},
+                **{column: dian_row.get(column) for column in COMPARABLE_COLUMNS},
                 "Platform": platform_row,
             }
         )
@@ -91,11 +100,14 @@ def _counters_for(rows: list[dict]) -> dict[str, int]:
 
 
 def run(dian_pdf_bytes: bytes, platform_pdf_bytes: bytes | None = None) -> dict:
-    _ = platform_pdf_bytes
+    dian_words_df = words_dataframe_from_bytes(dian_pdf_bytes)
+    dian_df = dian_extractor.run(dian_words_df)
 
-    words_df = words_dataframe_from_bytes(dian_pdf_bytes)
-    dian_df = dian_extractor.run(words_df)
-    platform_df = _empty_platform_dataframe()
+    if platform_pdf_bytes:
+        platform_words_df = words_dataframe_from_bytes(platform_pdf_bytes)
+        platform_df = platform_extractor.run(platform_words_df)
+    else:
+        platform_df = _empty_platform_dataframe()
 
     rows = _compare_rows(_dian_comparable_rows(dian_df), platform_df)
 

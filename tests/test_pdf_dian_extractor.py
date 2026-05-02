@@ -125,8 +125,8 @@ def test_run_with_multiple_pages():
     assert row_p2["cantidad"] == "2222"
 
 
-def test_run_combines_multiple_fields():
-    """End-to-end: run() should join subpartida, cantidad, peso, fob by page."""
+def test_run_combines_multiple_fields_with_fob_total_contract():
+    """End-to-end: run() should join subpartida, cantidad, peso, and fob_total by page."""
     df = _make_df(
         [
             # Label + value for subpartida
@@ -139,6 +139,11 @@ def test_run_combines_multiple_fields():
             _row(1, 55, 50, 100, 60, "Cantidad", 1, 3, 2),
             _row(1, 105, 50, 140, 60, "dcms.", 1, 3, 3),
             _row(1, 15, 65, 80, 75, "99", 1, 4, 1),
+            # Label + value for FOB total
+            _row(1, 10, 90, 100, 100, "78.Valor", 1, 5, 1),
+            _row(1, 105, 90, 130, 100, "FOB", 1, 5, 2),
+            _row(1, 135, 90, 160, 100, "USD", 1, 5, 3),
+            _row(1, 180, 105, 250, 115, "5000", 1, 6, 1),
         ]
     )
 
@@ -148,3 +153,6 @@ def test_run_combines_multiple_fields():
     assert result["page"][0] == 1
     assert result["subpartida"][0] == "1234.56"
     assert result["cantidad"][0] == "99"
+    assert result["fob_total"][0] == "5000"
+    assert "fob_total" in result.columns
+    assert "fob" not in result.columns

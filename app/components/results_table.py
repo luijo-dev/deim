@@ -6,7 +6,7 @@ COLUMN_LABELS = {
     "cantidad": "DIAN - Cantidad",
     "peso_neto": "DIAN - Peso neto",
     "peso_bruto": "DIAN - Peso bruto",
-    "fob": "DIAN - FOB",
+    "fob_total": "DIAN - FOB total",
     "Platform": "Plataforma",
 }
 

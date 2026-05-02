@@ -203,6 +203,8 @@ def platform_df_adapter(df: pl.DataFrame) -> pl.DataFrame:
             f"df falta columnas requeridas para platform_df_adapter: {sorted(missing)}"
         )
 
+    # Comparable contract intentionally excludes valor_fob_real/fob_real until DIAN
+    # exposes an equivalent source for a fair comparison.
     return (
         df.filter(pl.col("column_id").is_in(_NUMERIC_MERCHANDISE_COLUMN_IDS))
         .group_by(["page", "row_id", "subpartida"], maintain_order=True)
@@ -214,6 +216,13 @@ def platform_df_adapter(df: pl.DataFrame) -> pl.DataFrame:
         )
         .filter(pl.all_horizontal(pl.col(_NUMERIC_MERCHANDISE_COLUMN_IDS).is_not_null()))
         .select(["subpartida", *_NUMERIC_MERCHANDISE_COLUMN_IDS])
+        .rename(
+            {
+                "p_bruto": "peso_bruto",
+                "p_neto": "peso_neto",
+                "valor_fob_total": "fob_total",
+            }
+        )
     )
 
 

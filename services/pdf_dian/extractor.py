@@ -99,7 +99,7 @@ def run(words_df: pl.DataFrame) -> pl.DataFrame:
     cantidad_df = cantidad_df.rename({"text": "cantidad"})
     peso_neto_df = peso_neto_df.rename({"text": "peso_neto"})
     peso_bruto_df = peso_bruto_df.rename({"text": "peso_bruto"})
-    fob_df = fob_df.rename({"text": "fob"})
+    fob_df = fob_df.rename({"text": "fob_total"})
 
     return (
         subpartida_df.join(cantidad_df, on="page", how="full")
