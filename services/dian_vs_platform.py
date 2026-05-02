@@ -5,11 +5,13 @@ from services.pdf_handler import words_dataframe_from_bytes
 from services.pdf_platform import extractor as platform_extractor
 
 COMPARABLE_COLUMNS = ["cantidad", "peso_neto", "peso_bruto", "fob_total"]
+DIAN_COLUMNS = {col: f"dian_{col}" for col in COMPARABLE_COLUMNS}
+CLIENTE_COLUMNS = {col: f"cliente_{col}" for col in COMPARABLE_COLUMNS}
 RESULT_COLUMNS = [
     "Estado",
     "subpartida",
-    *COMPARABLE_COLUMNS,
-    *[f"Plat - {column}" for column in COMPARABLE_COLUMNS],
+    *[f"dian_{col}" for col in COMPARABLE_COLUMNS],
+    *[f"cliente_{col}" for col in COMPARABLE_COLUMNS],
 ]
 COUNTER_KEYS = ["total", "Sin match", "Todo bien", "Con diferencias"]
 
@@ -38,62 +40,45 @@ def _normalize_subpartida(value: object) -> str | None:
     return text or None
 
 
-def _dian_comparable_rows(dian_df: pl.DataFrame) -> list[dict]:
-    if "subpartida" not in dian_df.columns:
-        return []
+def _comparable_dataframe(df: pl.DataFrame) -> pl.DataFrame:
+    required_columns = ["subpartida", *COMPARABLE_COLUMNS]
 
-    rows = []
-    for row in dian_df.to_dicts():
-        subpartida = _normalize_subpartida(row.get("subpartida"))
-        if not subpartida:
-            continue
-        row["subpartida"] = subpartida
-        rows.append(row)
-    return rows
+    if "subpartida" not in df.columns:
+        return pl.DataFrame(schema={column: pl.Null for column in required_columns})
 
+    comparable_df = df.select(required_columns).with_columns(
+        pl.col("subpartida")
+        .map_elements(_normalize_subpartida, return_dtype=pl.String)
+        .alias("subpartida")
+    )
+    comparable_df = comparable_df.filter(pl.col("subpartida").is_not_null())
 
-def _platform_rows_by_subpartida(platform_df: pl.DataFrame) -> dict[str, dict]:
-    if "subpartida" not in platform_df.columns:
-        return {}
+    comparable_df = comparable_df.group_by("subpartida").agg(
+        [pl.col(col).sum().round(2).alias(col) for col in COMPARABLE_COLUMNS]
+    )
 
-    rows_by_subpartida = {}
-    for row in platform_df.to_dicts():
-        subpartida = _normalize_subpartida(row.get("subpartida"))
-        if subpartida:
-            row["subpartida"] = subpartida
-            rows_by_subpartida[subpartida] = row
-    return rows_by_subpartida
+    return comparable_df
 
 
-def _compare_rows(dian_rows: list[dict], platform_df: pl.DataFrame) -> list[dict]:
-    platform_rows = _platform_rows_by_subpartida(platform_df)
-    result_rows = []
+def _compare_rows(dian_df: pl.DataFrame, platform_df: pl.DataFrame) -> pl.DataFrame:
+    dian_renamed = dian_df.rename(DIAN_COLUMNS)
+    platform_renamed = platform_df.rename(CLIENTE_COLUMNS)
 
-    for dian_row in dian_rows:
-        subpartida = dian_row["subpartida"]
-        platform_row = platform_rows.get(subpartida)
+    joined = dian_renamed.join(platform_renamed, on="subpartida", how="left")
 
-        if platform_row is None:
-            estado = "Sin match"
-        elif dian_row == platform_row:
-            estado = "Todo bien"
-        else:
-            estado = "Con diferencias"
+    has_platform = pl.col("cliente_cantidad").is_not_null()
+    all_match = pl.all_horizontal(
+        [pl.col(f"dian_{col}").eq(pl.col(f"cliente_{col}")) for col in COMPARABLE_COLUMNS]
+    )
+    estado_expr = (
+        pl.when(~has_platform)
+        .then(pl.lit("Sin match"))
+        .when(all_match)
+        .then(pl.lit("Todo bien"))
+        .otherwise(pl.lit("Con diferencias"))
+    )
 
-        result = {
-            "Estado": estado,
-            "subpartida": subpartida,
-            **{column: dian_row.get(column) for column in COMPARABLE_COLUMNS},
-        }
-
-        for column in COMPARABLE_COLUMNS:
-            result[f"Plat - {column}"] = (
-                platform_row.get(column) if platform_row is not None else None
-            )
-
-        result_rows.append(result)
-
-    return result_rows
+    return joined.with_columns(estado_expr.alias("Estado")).select(RESULT_COLUMNS)
 
 
 def _counters_for(rows: list[dict]) -> dict[str, int]:
@@ -118,7 +103,11 @@ def run(dian_pdf_bytes: bytes, platform_pdf_bytes: bytes | None = None) -> dict:
     else:
         platform_df = _empty_platform_dataframe()
 
-    rows = _compare_rows(_dian_comparable_rows(dian_df), platform_df)
+    comparison_df = _compare_rows(
+        _comparable_dataframe(dian_df),
+        _comparable_dataframe(platform_df),
+    )
+    rows = comparison_df.to_dicts()
 
     return {
         "message": "Comparación ejecutada correctamente.",

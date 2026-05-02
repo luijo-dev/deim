@@ -3,14 +3,14 @@ import streamlit as st
 COLUMN_LABELS = {
     "Estado": "Estado",
     "subpartida": "Subpartida",
-    "cantidad": "DIAN - Cantidad",
-    "peso_neto": "DIAN - Peso neto",
-    "peso_bruto": "DIAN - Peso bruto",
-    "fob_total": "DIAN - FOB total",
-    "Plat - cantidad": "Cliente - Cantidad",
-    "Plat - peso_neto": "Cliente - Peso neto",
-    "Plat - peso_bruto": "Cliente - Peso bruto",
-    "Plat - fob_total": "Cliente - FOB total",
+    "dian_cantidad": "DIAN - Cantidad",
+    "dian_peso_neto": "DIAN - Peso neto",
+    "dian_peso_bruto": "DIAN - Peso bruto",
+    "dian_fob_total": "DIAN - FOB total",
+    "cliente_cantidad": "Cliente - Cantidad",
+    "cliente_peso_neto": "Cliente - Peso neto",
+    "cliente_peso_bruto": "Cliente - Peso bruto",
+    "cliente_fob_total": "Cliente - FOB total",
 }
 
 
