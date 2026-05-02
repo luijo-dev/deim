@@ -5,7 +5,12 @@ from services.pdf_handler import words_dataframe_from_bytes
 from services.pdf_platform import extractor as platform_extractor
 
 COMPARABLE_COLUMNS = ["cantidad", "peso_neto", "peso_bruto", "fob_total"]
-RESULT_COLUMNS = ["Estado", "subpartida", *COMPARABLE_COLUMNS, "Platform"]
+RESULT_COLUMNS = [
+    "Estado",
+    "subpartida",
+    *COMPARABLE_COLUMNS,
+    *[f"Plat - {column}" for column in COMPARABLE_COLUMNS],
+]
 COUNTER_KEYS = ["total", "Sin match", "Todo bien", "Con diferencias"]
 
 
@@ -75,14 +80,18 @@ def _compare_rows(dian_rows: list[dict], platform_df: pl.DataFrame) -> list[dict
         else:
             estado = "Con diferencias"
 
-        result_rows.append(
-            {
-                "Estado": estado,
-                "subpartida": subpartida,
-                **{column: dian_row.get(column) for column in COMPARABLE_COLUMNS},
-                "Platform": platform_row,
-            }
-        )
+        result = {
+            "Estado": estado,
+            "subpartida": subpartida,
+            **{column: dian_row.get(column) for column in COMPARABLE_COLUMNS},
+        }
+
+        for column in COMPARABLE_COLUMNS:
+            result[f"Plat - {column}"] = (
+                platform_row.get(column) if platform_row is not None else None
+            )
+
+        result_rows.append(result)
 
     return result_rows
 
