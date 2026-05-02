@@ -1,5 +1,24 @@
 import polars as pl
 
+_NUMERIC_COLUMNS = ["cantidad", "peso_neto", "peso_bruto", "fob_total"]
+
+
+def _clean_dian_numeric_text(column_name: str = "text") -> pl.Expr:
+    return (
+        pl.col(column_name)
+        .str.strip_chars()
+        .str.replace(r"^\$", "")
+        .str.replace_all(r"^[\.\-–—'\"\"''`:;\s]+", "")
+        .str.replace_all(r"[\.\-–—'\"\"''`:;\s]+$", "")
+        .str.reverse()
+        .str.replace(r"\.", "@", n=1)
+        .str.reverse()
+        .str.replace_all(r"\.", "")
+        .str.replace("@", ".")
+        .cast(pl.Float64, strict=False)
+        .round(2)
+    )
+
 
 def get_value_by_geometric(
     df: pl.DataFrame, target_line: str, x0_tolerance: int = 0, x1_tolerance: int = 0
@@ -101,7 +120,7 @@ def run(words_df: pl.DataFrame) -> pl.DataFrame:
     peso_bruto_df = peso_bruto_df.rename({"text": "peso_bruto"})
     fob_df = fob_df.rename({"text": "fob_total"})
 
-    return (
+    result = (
         subpartida_df.join(cantidad_df, on="page", how="full")
         .with_columns(pl.coalesce(["page", "page_right"]).alias("page"))
         .drop("page_right")
@@ -114,5 +133,10 @@ def run(words_df: pl.DataFrame) -> pl.DataFrame:
         .join(fob_df, on="page", how="full")
         .with_columns(pl.coalesce(["page", "page_right"]).alias("page"))
         .drop("page_right")
-        .sort("page")
     )
+
+    result = result.with_columns(
+        [_clean_dian_numeric_text(column).alias(column) for column in _NUMERIC_COLUMNS]
+    )
+
+    return result.sort("page")
