@@ -405,7 +405,7 @@ if __name__ == "__main__":
     file_name = sys.argv[1]
 
     t0_words = time.perf_counter()
-    words_df = words_dataframe(file_name, [1])
+    words_df = words_dataframe(file_name)
     t1_words = time.perf_counter()
 
     t0_platform_chunk = time.perf_counter()
@@ -513,6 +513,8 @@ if __name__ == "__main__":
 
         platform_df = platform_df_adapter(platform_values_contract_df)
         print("============ platform df (wide comparable shape): =============")
+        # contar subpartidas unicas
+        print(f"Subpartidas únicas: {platform_df['subpartida'].n_unique()}")
         print(platform_df)
         
         rows_df.write_csv("./res/rows_df.csv")
