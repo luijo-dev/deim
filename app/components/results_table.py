@@ -21,7 +21,7 @@ def results_table(rows: list[dict] | None) -> None:
 
     st.dataframe(
         rows,
-        use_container_width=True,
+        width="stretch",
         hide_index=True,
         column_config={
             column: st.column_config.TextColumn(label)

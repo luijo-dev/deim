@@ -1,6 +1,6 @@
 import streamlit as st
 
-from app.page import render_page
+from .page import render_page
 
 
 def run() -> None:

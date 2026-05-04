@@ -9,10 +9,10 @@ setup:
 	uv sync
 
 dev:
-	uv run streamlit run main.py --server.runOnSave true
+	uv run streamlit run main.py --server.headless true
 
 run:
-	uv run streamlit run main.py
+	uv run streamlit run main.py --server.headless true
 
 test:
 	uv run pytest -q

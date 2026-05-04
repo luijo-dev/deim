@@ -1,10 +1,10 @@
 import streamlit as st
 
-from app.components.input_pdf import input_pdf as input_pdf_component
-from app.components.message_box import message_box as message_box_component
-from app.components.primary_button import primary_button as primary_button_component
-from app.components.results_table import results_table as results_table_component
-from app.components.summary_counters import (
+from .components.input_pdf import input_pdf as input_pdf_component
+from .components.message_box import message_box as message_box_component
+from .components.primary_button import primary_button as primary_button_component
+from .components.results_table import results_table as results_table_component
+from .components.summary_counters import (
     summary_counters as summary_counters_component,
 )
 from services import dian_vs_platform

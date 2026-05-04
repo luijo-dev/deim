@@ -1,6 +1,21 @@
+import logging
+import re
+
 import polars as pl
 
+logger = logging.getLogger(__name__)
+
 _NUMERIC_COLUMNS = ["cantidad", "peso_neto", "peso_bruto", "fob_total"]
+
+
+def _target_line_regex(target_line: str) -> str:
+    """Build a tolerant regex for DIAN labels with variable spacing around dots."""
+    words = []
+    for word in target_line.split():
+        escaped = re.escape(word)
+        escaped = escaped.replace(r"\.", r"\s*\.\s*")
+        words.append(escaped)
+    return r"^" + r"\s+".join(words)
 
 
 def _clean_dian_numeric_text(column_name: str = "text") -> pl.Expr:
@@ -38,13 +53,33 @@ def get_value_by_geometric(
 
     keys = ["page", "block_no", "line_no"]
 
-    line_matches = (
+    lines_df = (
         df.sort(keys + ["word_no"])
         .group_by(keys)
         .agg(pl.col("text").str.join(" ").alias("line_text"))
-        .filter(pl.col("line_text").str.starts_with(target_line))
+    )
+
+    target_line_regex = _target_line_regex(target_line)
+    line_matches = (
+        lines_df
+        .filter(pl.col("line_text").str.contains(target_line_regex))
         .select(keys)
     )
+
+    if line_matches.is_empty():
+        target_number = target_line.split(".", maxsplit=1)[0]
+        nearby_lines = (
+            lines_df
+            .filter(pl.col("line_text").str.contains(target_number))
+            .select([*keys, "line_text"])
+            .head(10)
+        )
+        logger.warning(
+            "DIAN target=%r line_matches=0. Nearby lines containing %r:\n%s",
+            target_line,
+            target_number,
+            nearby_lines,
+        )
 
     target_line_list = target_line.split()
 
@@ -58,7 +93,15 @@ def get_value_by_geometric(
     label_bounds = label_df.group_by(keys).agg(
         pl.col("x0").min().alias("label_x0_min"),
         pl.col("x1").max().alias("label_x1_max"),
-        pl.col("y1").max().alias("label_y1_max"),
+        pl.col("y0").max().alias("label_y0_max"),
+    )
+
+    logger.info(
+        "DIAN target=%r line_matches=%s label_words=%s label_bounds:\n%s",
+        target_line,
+        line_matches.height,
+        label_df.height,
+        label_bounds.head(5),
     )
 
     candidate_words = df.select(
@@ -75,13 +118,35 @@ def get_value_by_geometric(
         ]
     )
 
-    value_candidates = (
+    filtered_candidates = (
         candidate_words.join(label_bounds, on=["page"], how="inner")
         .filter(
             (pl.col("cand_x0") > (pl.col("label_x0_min") - x0_tolerance))
             & (pl.col("cand_x0") < (pl.col("label_x1_max") + x1_tolerance))
-            & (pl.col("cand_y0") > pl.col("label_y1_max"))
+            & (pl.col("cand_y0") > (pl.col("label_y0_max")))
         )
+    )
+
+    logger.info(
+        "DIAN target=%r filtered_candidates=%s sample:\n%s",
+        target_line,
+        filtered_candidates.height,
+        filtered_candidates.select(
+            [
+                "page",
+                "cand_text",
+                "cand_x0",
+                "cand_y0",
+                "cand_y1",
+                "label_x0_min",
+                "label_x1_max",
+                "label_y0_max",
+            ]
+        ).head(15),
+    )
+
+    value_candidates = (
+        filtered_candidates
         .sort(["page", "block_no", "line_no", "cand_y0", "cand_x0", "cand_word_no"])
         .group_by(keys)
         .agg(
@@ -94,6 +159,13 @@ def get_value_by_geometric(
         )
         .with_columns(pl.lit("value").alias("kind"))
         .select(label_df.columns)
+    )
+
+    logger.info(
+        "DIAN target=%r value_candidates=%s selected:\n%s",
+        target_line,
+        value_candidates.height,
+        value_candidates.select(["page", "text", "x0", "y0", "y1"]).head(15),
     )
 
     result_df = pl.concat([label_df, value_candidates], how="vertical").sort(
@@ -109,10 +181,10 @@ def get_value_by_geometric(
 def run(words_df: pl.DataFrame) -> pl.DataFrame:
 
     subpartida_df = get_value_by_geometric(words_df, "59. Subpartida arancelaria")
-    cantidad_df = get_value_by_geometric(words_df, "77. Cantidad dcms.", x1_tolerance=20)
-    peso_neto_df = get_value_by_geometric(words_df, "72. Peso neto kgs.", x1_tolerance=20)
-    peso_bruto_df = get_value_by_geometric(words_df, "71. Peso bruto kgs.", x1_tolerance=20)
-    fob_df = get_value_by_geometric(words_df, "78.Valor FOB USD", x1_tolerance=50)
+    cantidad_df = get_value_by_geometric(words_df, "77. Cantidad dcms.", x1_tolerance=35)
+    peso_neto_df = get_value_by_geometric(words_df, "72. Peso neto kgs. dcms.", x1_tolerance=20)
+    peso_bruto_df = get_value_by_geometric(words_df, "71. Peso bruto kgs. dcms.", x1_tolerance=20)
+    fob_df = get_value_by_geometric(words_df, "78.Valor FOB USD", x1_tolerance=35)
 
     subpartida_df = subpartida_df.rename({"text": "subpartida"})
     cantidad_df = cantidad_df.rename({"text": "cantidad"})
