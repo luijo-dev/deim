@@ -35,7 +35,9 @@ def _available_pages(doc: fitz.Document, pages: list[int] | None = None) -> list
 
 
 def _words_dataframe_from_document(
-    doc: fitz.Document, pages: list[int] | None = None
+    doc: fitz.Document,
+    pages: list[int] | None = None,
+    filter_footer: bool = True,
 ) -> pl.DataFrame:
     rows: list[dict[str, int | float | str]] = []
 
@@ -61,7 +63,7 @@ def _words_dataframe_from_document(
     if not rows:
         return pl.DataFrame(schema=WORDS_SCHEMA)
 
-    return (
+    words_df = (
         pl.DataFrame(rows)
         .with_columns(
             pl.col("x0").floor().cast(pl.Int64),
@@ -69,25 +71,35 @@ def _words_dataframe_from_document(
             pl.col("x1").floor().cast(pl.Int64),
             pl.col("y1").floor().cast(pl.Int64),
         )
-        .filter(pl.col("y0") <= FOOTER_Y0_THRESHOLD)
     )
+
+    if filter_footer:
+        return words_df.filter(pl.col("y0") <= FOOTER_Y0_THRESHOLD)
+
+    return words_df
 
 
 def words_dataframe_from_bytes(
-    pdf_bytes: bytes, pages: list[int] | None = None
+    pdf_bytes: bytes,
+    pages: list[int] | None = None,
+    filter_footer: bool = True,
 ) -> pl.DataFrame:
     if not pdf_bytes:
         raise ValueError("El PDF cargado está vacío o no contiene bytes legibles.")
 
     try:
         with fitz.open(stream=pdf_bytes, filetype="pdf") as doc:
-            return _words_dataframe_from_document(doc, pages)
+            return _words_dataframe_from_document(doc, pages, filter_footer=filter_footer)
     except Exception as exc:
         raise ValueError("No fue posible leer el PDF cargado.") from exc
 
 
-def words_dataframe(pdf_name: str, pages: list[int] | None = None) -> pl.DataFrame:
+def words_dataframe(
+    pdf_name: str,
+    pages: list[int] | None = None,
+    filter_footer: bool = True,
+) -> pl.DataFrame:
     pdf_path = _resolve_pdf_path(pdf_name)
 
     with fitz.open(pdf_path) as doc:
-        return _words_dataframe_from_document(doc, pages)
+        return _words_dataframe_from_document(doc, pages, filter_footer=filter_footer)

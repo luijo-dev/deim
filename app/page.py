@@ -1,5 +1,13 @@
 import streamlit as st
 
+from services import dian_vs_platform
+
+from .components.extracted_sections import (
+    informative_fields_section as informative_fields_section_component,
+)
+from .components.extracted_sections import (
+    totals_section as totals_section_component,
+)
 from .components.input_pdf import input_pdf as input_pdf_component
 from .components.message_box import message_box as message_box_component
 from .components.primary_button import primary_button as primary_button_component
@@ -7,7 +15,6 @@ from .components.results_table import results_table as results_table_component
 from .components.summary_counters import (
     summary_counters as summary_counters_component,
 )
-from services import dian_vs_platform
 
 
 def render_page() -> None:
@@ -29,6 +36,8 @@ def render_page() -> None:
     message_kind = "info"
     counters: dict[str, int] | None = None
     rows: list[dict] | None = None
+    totals: list[dict] | None = None
+    informative_fields: list[dict] | None = None
 
     if primary_button_component("Ejecutar comparación", key="run_comparison"):
         if not dian_pdf:
@@ -51,7 +60,11 @@ def render_page() -> None:
                     )
                 counters = result.get("counters")
                 rows = result.get("rows")
+                totals = result.get("totals")
+                informative_fields = result.get("informative_fields")
 
     message_box_component(message, message_kind)
+    totals_section_component(totals)
+    informative_fields_section_component(informative_fields)
     summary_counters_component(counters)
     results_table_component(rows)

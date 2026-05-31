@@ -8,6 +8,14 @@ from .summary import build_rows
 
 _NUMERIC_MERCHANDISE_COLUMN_IDS = ["p_bruto", "p_neto", "cantidad", "valor_fob_total"]
 _NUMERIC_TEXT_REGEX = r"^(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?$"
+_TOTAL_LABELS = {
+    "valor_flete": "Valor Fletes :",
+    "valor_seguro": "Valor Seguro :",
+    "otros_gastos": "Otros Gastos :",
+}
+_INFORMATIVE_LABELS = {
+    "valor_cif_us": "Valor CIF US :",
+}
 
 _MERCANCIA_HEADER_CONFIG = [
     {"name": "Ref.", "x0_tolerance": 0, "x1_tolerance": 0, "is_align_left": True},
@@ -157,6 +165,55 @@ def _clean_numeric_text_expr(column_name: str = "text") -> pl.Expr:
     )
 
 
+def _parse_summary_numeric(value: str | None) -> float | None:
+    if value is None:
+        return None
+
+    cleaned = re.sub(r"[^\d\.,]", "", value)
+    if not cleaned:
+        return None
+
+    cleaned = cleaned.replace(",", "")
+    try:
+        return round(float(cleaned), 2)
+    except ValueError:
+        return None
+
+
+def _page_one_lines(words_df: pl.DataFrame) -> pl.DataFrame:
+    return (
+        words_df.filter(pl.col("page") == 1)
+        .sort(["block_no", "line_no", "word_no"])
+        .group_by(["block_no", "line_no"], maintain_order=True)
+        .agg(pl.col("text").str.join(" ").alias("line_text"))
+        .sort(["block_no", "line_no"])
+    )
+
+
+def _extract_page_one_summary_values(
+    words_df: pl.DataFrame, fields: dict[str, str]
+) -> dict[str, float | None]:
+    lines_df = _page_one_lines(words_df)
+    values: dict[str, float | None] = {}
+
+    for key, label in fields.items():
+        match = lines_df.filter(pl.col("line_text").eq(label)).head(1)
+        if match.is_empty():
+            values[key] = None
+            continue
+
+        block_no = match.item(0, "block_no")
+        line_no = match.item(0, "line_no")
+        value_line = lines_df.filter(
+            (pl.col("block_no") == block_no) & (pl.col("line_no") == line_no + 1)
+        ).head(1)
+        values[key] = _parse_summary_numeric(
+            None if value_line.is_empty() else value_line.item(0, "line_text")
+        )
+
+    return values
+
+
 def select_numeric_merchandise_columns(df: pl.DataFrame) -> pl.DataFrame:
     return (
         df.filter(pl.col("column_id").is_in(_NUMERIC_MERCHANDISE_COLUMN_IDS))
@@ -285,7 +342,7 @@ def add_subpartida_code(df: pl.DataFrame) -> pl.DataFrame:
     return df.join(codes, on="subpartida_id", how="left")
 
 
-def run(words_df: pl.DataFrame) -> pl.DataFrame:
+def _extract_rows(words_df: pl.DataFrame) -> pl.DataFrame:
     platform_words_df = chunk_words_subpartidas_hasta_anexos(words_df)
     rows_df = build_rows(platform_words_df, y_tolerance=2)
 
@@ -301,3 +358,11 @@ def run(words_df: pl.DataFrame) -> pl.DataFrame:
     numeric_columns_df = select_numeric_merchandise_columns(columns_df)
     platform_values_contract_df = build_platform_values_contract(numeric_columns_df)
     return platform_df_adapter(platform_values_contract_df)
+
+
+def run(words_df: pl.DataFrame) -> dict[str, object]:
+    return {
+        "rows": _extract_rows(words_df),
+        "totals": _extract_page_one_summary_values(words_df, _TOTAL_LABELS),
+        "informative_fields": _extract_page_one_summary_values(words_df, _INFORMATIVE_LABELS),
+    }
